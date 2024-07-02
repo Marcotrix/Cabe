@@ -7,95 +7,57 @@ document.addEventListener('DOMContentLoaded', function() {
 		// Get current plain text content
 		var textContent = editor.textContent;
 
-		// Clear the editor
-		editor.innerHTML = '';
-
 		// Regular expressions for different syntax elements
-		var commentsPattern = /\/\/.*|\/\*[\s\S]*?\*\//g; // Matches both // comments and /* */ comments
-		var stringPattern = /(['"])(?:\\.|[^\\])*?\1/g; // Matches strings within single or double quotes
-		var numberPattern = /\b\d+\b/g; // Matches numbers
-		var keywords = ['function', 'if', 'else', 'for', 'while', 'var', 'const', 'let'];
-		var keywordPattern = new RegExp('\\b(' + keywords.join('|') + ')\\b', 'g');
-
-		// Function to replace text with highlighted span
-		function replaceWithSpan(className, match) {
-			var span = document.createElement('span');
-			span.className = className;
-			span.textContent = match;
-			return span;
-		}
+		var patterns = [
+			{ pattern: /\/\/.*|\/\*[\s\S]*?\*\//g, className: 'comment' }, // Matches both // comments and /* */ comments
+			{ pattern: /(['"])(?:\\.|[^\\])*?\1/g, className: 'string' }, // Matches strings within single or double quotes
+			{ pattern: /\b\d+\b/g, className: 'number' }, // Matches numbers
+			{ pattern: new RegExp('\\b(function|if|else|for|while|var|const|let)\\b', 'g'), className: 'keyword' } // Matches keywords
+		];
 
 		// Array to store matched patterns with their positions
 		var matches = [];
+		var occupied = Array(textContent.length).fill(false);
 
-		// Find matches for each pattern
-		var match;
-		while ((match = commentsPattern.exec(textContent)) !== null) {
-			matches.push({
-				start: match.index,
-				end: commentsPattern.lastIndex,
-				className: 'comment',
-				text: match[0]
-			});
-		}
-		while ((match = stringPattern.exec(textContent)) !== null) {
-			// Check if this match overlaps with any existing matches from comments
-			var overlaps = matches.some(function(m) {
-				return (match.index >= m.start && match.index < m.end) ||
-					(stringPattern.lastIndex > m.start && stringPattern.lastIndex <= m.end);
-			});
-			if (!overlaps) {
-				matches.push({
-					start: match.index,
-					end: stringPattern.lastIndex,
-					className: 'string',
-					text: match[0]
-				});
+		// Find matches for each pattern and mark occupied positions
+		patterns.forEach(({ pattern, className }) => {
+			let match;
+			while ((match = pattern.exec(textContent)) !== null) {
+				let start = match.index;
+				let end = pattern.lastIndex;
+				if (!occupied.slice(start, end).includes(true)) {
+					matches.push({ start, end, className, text: match[0] });
+					for (let i = start; i < end; i++) occupied[i] = true;
+				}
 			}
-		}
-		while ((match = numberPattern.exec(textContent)) !== null) {
-			// Check if this match overlaps with any existing matches from comments or strings
-			var overlaps = matches.some(function(m) {
-				return (match.index >= m.start && match.index < m.end) ||
-					(numberPattern.lastIndex > m.start && numberPattern.lastIndex <= m.end);
-			});
-			if (!overlaps) {
-				matches.push({
-					start: match.index,
-					end: numberPattern.lastIndex,
-					className: 'number',
-					text: match[0]
-				});
-			}
-		}
-		while ((match = keywordPattern.exec(textContent)) !== null) {
-			// Check if this match overlaps with any existing matches from comments, strings, or numbers
-			var overlaps = matches.some(function(m) {
-				return (match.index >= m.start && match.index < m.end) ||
-					(keywordPattern.lastIndex > m.start && keywordPattern.lastIndex <= m.end);
-			});
-			if (!overlaps) {
-				matches.push({
-					start: match.index,
-					end: keywordPattern.lastIndex,
-					className: 'keyword',
-					text: match[0]
-				});
-			}
-		}
+		});
 
 		// Sort matches by their start position
 		matches.sort((a, b) => a.start - b.start);
 
+		// Create a DocumentFragment to hold the new content
+		var fragment = document.createDocumentFragment();
+
 		// Iterate over the text and apply syntax highlighting
 		var index = 0;
 		matches.forEach(function(match) {
-			editor.appendChild(document.createTextNode(textContent.substring(index, match.start)));
-			editor.appendChild(replaceWithSpan(match.className, match.text));
+			if (index < match.start) {
+				fragment.appendChild(document.createTextNode(textContent.substring(index, match.start)));
+			}
+			var span = document.createElement('span');
+			span.className = match.className;
+			span.textContent = match.text;
+			fragment.appendChild(span);
 			index = match.end;
 		});
 
-		editor.appendChild(document.createTextNode(textContent.substring(index))); // Append remaining text
+		if (index < textContent.length) {
+			fragment.appendChild(document.createTextNode(textContent.substring(index))); // Append remaining text
+		}
+
+		// Replace the content of the editor with the fragment
+		editor.innerHTML = '';
+		editor.appendChild(fragment);
 
 		// Restore selection
 		restoreSelection(editor, selection);
@@ -159,9 +121,7 @@ document.addEventListener('DOMContentLoaded', function() {
 	highlightCode();
 
 	// Perform syntax highlighting on input change
-	editor.addEventListener('input', function() {
-		highlightCode();
-	});
+	editor.addEventListener('input', highlightCode);
 
 	// Handle Enter key to create newline and auto-indent
 	editor.addEventListener('keydown', function(event) {
